@@ -64,6 +64,59 @@ test("csvSplits usa ; , escapa comillas y trae cabecera con los segmentos", () =
   assert.ok(csv[1].endsWith("3635s"));
 });
 
+const filaCsv = (nombre, club, total = 0) => ({
+  posicion: 1, dorsal: 2, nombre, club,
+  tiempos: [null, null, null, null, null], puestos: [null, null, null, null, null], total,
+});
+const csvCelda = (nombre, club, nombres = ["Nat", "T1", "Bici", "T2", "Carrera"]) =>
+  csvSplits(nombres, [filaCsv(nombre, club)], (s) => `${s}s`);
+
+test("csvSplits neutraliza fórmulas en nombre y club sin tocar números ni vacíos", () => {
+  for (const peligro of ["=1+1", "+1+1", "-1+1", "@SUM(1)"]) {
+    assert.ok(csvCelda(peligro, peligro).includes(`;"'${peligro}";"'${peligro}";`), peligro);
+  }
+  assert.ok(csvCelda(" =1+1", "  +1+1").includes(';"\' =1+1";"\'  +1+1";'), "espacios iniciales");
+  assert.ok(csvCelda("\t=1+1", "\t@A1").includes(';"\'\t=1+1";"\'\t@A1";'), "tab inicial");
+
+  const normal = { posicion: 3, dorsal: 42, nombre: "Ana", club: "", tiempos: [600, null, null, null, null], puestos: [1, null, null, null, null], total: 3635 };
+  const linea = csvSplits(["Nat", "T1", "Bici", "T2", "Carrera"], [normal], (s) => `${s}s`).split("\r\n")[1];
+  assert.ok(linea.startsWith("3;42;Ana;;600s;1;"), "números y vacíos intactos");
+  assert.ok(linea.endsWith(";3635s"));
+  assert.ok(!linea.includes("'"), "sin apóstrofo en valores normales");
+});
+
+test("csvSplits neutraliza textos que empiezan por tab, CR o LF y los escapa", () => {
+  assert.ok(csvCelda("\tTexto", "").includes(';"\'\tTexto";'));
+  assert.ok(csvCelda("\r=1+1", "").includes(`;"'\r=1+1";`));
+  assert.ok(csvCelda("\n@SUM(1)", "").includes(`;"'\n@SUM(1)";`));
+});
+
+test("csvSplits neutraliza variantes Unicode de ancho completo de =, +, - y @", () => {
+  for (const peligro of ["\uFF1D1+1", "\uFF0B1+1", "\uFF0D1+1", "\uFF201+1"]) {
+    assert.ok(csvCelda(peligro, peligro).includes(`;"'${peligro}";"'${peligro}";`), peligro);
+  }
+});
+
+test("csvSplits no prefija números negativos reales y deja null/undefined vacíos", () => {
+  const fila = { posicion: -1, dorsal: -2, nombre: null, club: undefined, tiempos: [null, null, null, null, null], puestos: [null, null, null, null, null], total: -3 };
+  const linea = csvSplits(["Nat", "T1", "Bici", "T2", "Carrera"], [fila], (s) => s).split("\r\n")[1];
+  assert.ok(linea.startsWith("-1;-2;;"), "negativos numéricos sin apóstrofo y vacíos intactos");
+  assert.ok(linea.endsWith(";-3"));
+  assert.ok(!linea.includes("'"), "sin apóstrofo en números negativos reales");
+  assert.ok(!linea.includes("null") && !linea.includes("undefined"), "null/undefined quedan vacíos");
+});
+
+test("csvSplits neutraliza cabeceras de segmento peligrosas", () => {
+  const cabecera = csvSplits(["=1+1", "T1", "Bici", "T2", "Carrera"], [], (s) => `${s}s`);
+  assert.ok(cabecera.includes(';"\'=1+1";Puesto =1+1;'));
+});
+
+test("csvSplits escapa comillas, punto y coma y saltos después de neutralizar", () => {
+  const csv = csvSplits(["Nat", "T1", "Bici", "T2", "Carrera"], [filaCsv('=1+1;"x"', "a;b\nc")], (s) => `${s}s`);
+  assert.ok(csv.includes('"\'=1+1;""x"""'), "fórmula neutralizada y comillas duplicadas");
+  assert.ok(csv.includes('"a;b\nc"'), "punto y coma y salto dentro de la celda");
+});
+
 test("las flechas, Inicio y Fin navegan entre pestañas", () => {
   assert.equal(indiceTrasTecla(0, 4, "ArrowRight"), 1);
   assert.equal(indiceTrasTecla(3, 4, "ArrowRight"), 0);

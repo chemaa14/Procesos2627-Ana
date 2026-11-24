@@ -66,9 +66,18 @@ export function resumenCarrera(clasificacion) {
   };
 }
 
+// Mitiga la interpretación de fórmulas al abrir el CSV: un texto que empieza por =, +, -, @
+// (incluidas sus variantes Unicode de ancho completo U+FF1D, U+FF0B, U+FF0D y U+FF20, también
+// tras espacios o controles iniciales) o por tab/CR/LF se antepone un apóstrofo. No promete
+// protección universal si el archivo se guarda y se reabre en cualquier otro editor.
+const textoPeligroso = (texto) => /^[\s\u0000-\u001f]*[=+\-@\uFF1D\uFF0B\uFF0D\uFF20]/.test(texto) || /^[\t\r\n]/.test(texto);
+
+// Las celdas peligrosas se entrecomillan siempre para que el apóstrofo quede dentro de la celda.
 const celdaCsv = (v) => {
-  const texto = v === null || v === undefined ? "" : String(v);
-  return /[;"\n\r]/.test(texto) ? `"${texto.replaceAll('"', '""')}"` : texto;
+  let texto = v === null || v === undefined ? "" : String(v);
+  const peligroso = typeof v === "string" && textoPeligroso(texto);
+  if (peligroso) texto = `'${texto}`;
+  return peligroso || /[;"\n\r]/.test(texto) ? `"${texto.replaceAll('"', '""')}"` : texto;
 };
 // CSV con ; (como lo abre Excel en español). formatear convierte segundos en texto.
 export function csvSplits(nombres, filas, formatear) {
